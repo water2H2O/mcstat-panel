@@ -1,0 +1,15 @@
+# dependencies (a bundle installed by path links itself into the profile instead)
+node_modules/
+pnpm-lock.yaml
+
+# local artifacts
+*.log
+dist/
+coverage/
+
+# editor / OS noise
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

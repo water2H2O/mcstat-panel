@@ -1,0 +1,3 @@
+- insert:
+    - id: mcstat-panel
+      name: '@local/mcstat-panel'

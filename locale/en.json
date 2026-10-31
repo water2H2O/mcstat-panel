@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Minecraft Server Panel",
+    "description": "Shows the server details mcstat prints — state, CPU, memory, players, world, backups, tunnel, lag — plus a live log tail."
+  }
+}
