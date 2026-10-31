@@ -1,9 +1,17 @@
 {
   "name": "@local/mcstat-panel",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
-  "description": "Read-only Minecraft server status panel for the DeepSeek Harness Web UI: the mcstat command, as a page.",
-  "keywords": ["deepseek-harness", "dsh", "dsh-plugin", "minecraft", "server", "dashboard", "systemd"],
+  "description": "Minecraft server panel for the DeepSeek Harness Web UI: the mcstat command as a page, plus server control, editable settings, and a live log stream.",
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "minecraft",
+    "server",
+    "dashboard",
+    "systemd"
+  ],
   "license": "MIT",
   "author": "water2H2O",
   "type": "module",
@@ -16,6 +24,7 @@
   "files": [
     "index.js",
     "client.js",
+    "lib/*.js",
     "cordis.patch.yml",
     "locale/*.json",
     "icon.svg",
@@ -26,11 +35,16 @@
     "check": "node scripts/check.mjs"
   },
   "dsh": {
-    "bundle": { "patch": "./cordis.patch.yml" },
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
     "client": {
       "platform": "web",
       "immediately": true,
-      "inject": ["@deepseek-ai/dsh-client-locale", "@deepseek-ai/dsh-client-ui-sidebar"]
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-ui-sidebar"
+      ]
     }
   }
 }
