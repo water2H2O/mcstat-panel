@@ -74,7 +74,7 @@ plugin_manager install_bundle <仓库绝对路径>
 | 运行时长 | `ps -o etime=` |
 | CPU | `/proc/<pid>/stat` 两次采样（两次轮询之间的占用） |
 | 内存 | `/proc/<pid>/status` 的 `VmRSS` + `/proc/meminfo` |
-| 在线玩家 | `journalctl -u mc` 里的 joined/left 事件（从最近一次 `Done (...)` 之后计算） |
+| 在线玩家 | `journalctl -u mc` 里当前运行期的 joined/left 事件（从进程启动时间起、最近一次 `Done (...)` 之后计算） |
 | 世界大小 | `du -sb <SERVER_DIR>/world` |
 | 备份 | `<SERVER_DIR>/simplebackups/*.zip` 的数量与总字节 |
 | 隧道 | `systemctl --user is-active <TUNNEL_UNIT>` + frpc 日志里打印的地址 |
@@ -114,6 +114,7 @@ plugin_manager install_bundle <仓库绝对路径>
 - 隧道地址取 frpc 日志里最后一次打印的地址，和 `mcstat` 的口径一致；如果 frpc 同时跑多个隧道，它可能不是 Minecraft 那条，需要自己确认隧道配置。
 - 修改设置在服务器运行时需要重启，整合包启动约 40 秒；在线玩家会被断开。
 - 每个打开页面的浏览器会各起一个 `journalctl -f` 子进程（SSE），关闭页面即回收。
+- 在线玩家由日志重建：只统计当前运行期（从进程启动时间起）的 joined/left 事件，服务器重启后自动从空列表开始。
 
 ## 开发
 
@@ -140,7 +141,8 @@ mcstat-panel/
 - 本地检查：
 
 ```bash
-node scripts/check.mjs
+node scripts/check.mjs   # 语法 / JSON / 图标
+node --test              # 单元测试（在线玩家重建等）
 ```
 
 ## English

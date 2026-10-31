@@ -32,7 +32,8 @@
     "LICENSE"
   ],
   "scripts": {
-    "check": "node scripts/check.mjs"
+    "check": "node scripts/check.mjs",
+    "test": "node --test"
   },
   "dsh": {
     "bundle": {
