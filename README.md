@@ -1,6 +1,6 @@
 # mcstat-panel
 
-把终端里的 `mcstat` 变成 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI 里的一块可视化面板：运行状态、CPU、内网穿透、世界与备份、实时日志，并且可以直接启动/停止/重启服务器、修改常用设置。
+把终端里的 `mcstat` 变成 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) Web UI 里的一块可视化面板：运行状态、CPU、内网穿透、世界与备份、实时日志，可以直接启动/停止/重启服务器、修改常用设置，还能打开「DS 辅助管理」让模型定期检查状态和日志。
 
 Host 端读取系统信息并暴露 `/mcstat` 下的 JSON / SSE 接口，Client 端用 React 渲染页面。没有构建步骤，也没有运行时依赖。
 
@@ -13,6 +13,7 @@ Host 端读取系统信息并暴露 `/mcstat` 下的 JSON / SSE 接口，Client 
 - **服务器设置**：难度、MOTD、最大玩家数、PVP、白名单、正版验证、视距、模拟距离；保存时服务器在运行会先停服、写配置、再启服（需确认）
 - **主机**：发行版、内核、CPU 型号与核心数、1/5/15 分钟负载、服务器目录所在磁盘、主机运行时长
 - **实时日志**：SSE 推流，支持暂停/继续、按级别过滤、关键字搜索；可选浏览器通知（玩家上下线、tick 卡顿）
+- **DS 辅助管理**：一键开启后，DeepSeek 每 5 分钟检查一次状态与日志，用「正常 / 注意 / 有问题」加问题列表和建议给出结论
 
 危险操作（停止、重启、保存并重启）都会弹确认框，执行期间按钮禁用并显示进度。
 
@@ -38,6 +39,8 @@ plugin_manager install_bundle <仓库绝对路径>
 | `GET` | `/mcstat/logs/stream` | SSE，每行日志一个 `data: {...}` 事件 |
 | `POST` | `/mcstat/action` | `{ "action": "start" \| "stop" \| "restart" }` |
 | `POST` | `/mcstat/config` | `{ "changes": { "difficulty": "hard", ... } }` |
+| `GET` | `/mcstat/ai` | 当前 DS 辅助管理状态与最近一次结论 |
+| `POST` | `/mcstat/ai` | `{ "enabled": true }` 开关；`{ "analyze": true }` 立即分析 |
 
 写接口要求 `content-type: application/json`，并拒绝跨站浏览器的 `Origin`（跨源会先触发预检，从而挡住 CSRF）。它们没有额外的登录校验：能访问到 GUI 端口的人就能调用，部署时请确保该端口只在你信任的网络上（默认是 Tailscale/内网地址）。
 
@@ -55,16 +58,35 @@ plugin_manager install_bundle <仓库绝对路径>
 
 在对话里说「把难度改成困难」或「重启一下服务器」即可，不需要点到页面。
 
+## DS 辅助管理
+
+面板里的开关（默认关闭）。打开后：
+
+- 首次立即分析一次，之后每次面板轮询时如果距上次分析超过 5 分钟，就在后台再跑一次
+- 只把**状态摘要**（服务、资源、玩家、世界、备份、隧道、配置、最近一小时去重后的告警/错误、最近 15 行日志）发给模型，完整日志不会离开本机
+- 结果按「正常 / 注意 / 有问题」着色，列最多 4 条问题和最多 5 条建议；同一条也通过 `mcstat_server` 工具的 `diagnose` 动作暴露给 agent
+- 使用 profile 里配置的默认模型（`agentDefaultModel`），所以需要 DSH 里已经配好一个可用模型
+- 开关和最近一次结论保存在 `${XDG_CONFIG_HOME:-~/.config}/mcstat-panel/state.json`，重启 DSH 后保留
+
 ## 配置
 
-通过环境变量（DSH 进程的环境）调整，均有默认值：
+三种来源，优先级从高到低：bundle 行配置 → 环境变量 → 自动探测。
 
-| 变量 | 默认值 | 说明 |
-| --- | --- | --- |
-| `MCSTAT_UNIT` | `mc.service` | Minecraft 服务的 `systemd --user` 单元名 |
-| `MCSTAT_TUNNEL_UNIT` | `natfrp.service` | frpc 隧道单元（SakuraFrp 默认值），留空则不检测隧道 |
-| `MCSTAT_SERVER_DIR` | `~/server` | 服务器目录，读写 `server.properties`，读取 `world/`、`simplebackups/`、`mods/` |
-| `MCSTAT_TUNNEL_ADDRESS` | 空 | 日志里取不到隧道地址时的兜底显示 |
+在 `cordis.patch.yml` 里给这一行加 `config`（都用默认值的话可以省略）：
+
+```yaml
+- id: mcstat-panel
+  name: '@local/mcstat-panel'
+  config:
+    unit: mc.service          # systemd --user 单元名
+    serverDir: ~/server       # 服务器目录（server.properties、world/、simplebackups/、mods/）
+    tunnelUnit: natfrp.service # frpc 隧道单元，留空则不检测
+    tunnelAddress: ''         # 日志里取不到隧道地址时的兜底显示
+```
+
+环境变量与 config 字段一一对应：`MCSTAT_UNIT`、`MCSTAT_SERVER_DIR`、`MCSTAT_TUNNEL_UNIT`、`MCSTAT_TUNNEL_ADDRESS`。
+
+**自动探测**：两者都没配时，插件会在 `systemctl --user` 的服务里找一个 `WorkingDirectory` 含 `server.properties` 的单元（优先名字带 minecraft/forge/mc/server 的，运行中的优先），并把它的目录当作服务器目录。探测结果会显示在面板的「主机」区域里；探测错了就用上面的 config 覆盖。
 
 ## 数据从哪来
 
@@ -81,6 +103,7 @@ plugin_manager install_bundle <仓库绝对路径>
 | 卡顿 | 最近 10 分钟日志里的 `Can't keep up` |
 | 版本 / 端口 / 难度 / 模组 | `server.properties`、日志、`mods/*.jar` |
 | 主机信息 | `/etc/os-release`、`os.release()`、`/proc/cpuinfo`、`os.loadavg()`、`/proc/uptime`、`df -B1` |
+| 服务单元 / 目录 | bundle config → 环境变量 → `systemctl --user show` 的 `WorkingDirectory` 自动探测 |
 | 日志 | `journalctl -u mc`（快照 60 行，SSE 只推新行） |
 
 `/mcstat/stats` 返回示例（截断）：
@@ -114,6 +137,7 @@ plugin_manager install_bundle <仓库绝对路径>
 - 隧道地址取 frpc 日志里最后一次打印的地址，和 `mcstat` 的口径一致；如果 frpc 同时跑多个隧道，它可能不是 Minecraft 那条，需要自己确认隧道配置。
 - 修改设置在服务器运行时需要重启，整合包启动约 40 秒；在线玩家会被断开。
 - 每个打开页面的浏览器会各起一个 `journalctl -f` 子进程（SSE），关闭页面即回收。
+- DS 辅助管理需要 profile 里有可用的默认模型；每次分析会消耗少量 token（约 2k），关闭开关即停止。
 - 在线玩家由日志重建：只统计当前运行期（从进程启动时间起）的 joined/left 事件，服务器重启后自动从空列表开始。
 
 ## 开发
@@ -147,7 +171,7 @@ node --test              # 单元测试（在线玩家重建等）
 
 ## English
 
-A Minecraft server panel inside the DeepSeek Harness Web UI: live status (service, CPU, memory, players, world, backups, tunnel, tick warnings), host facts, an editable subset of `server.properties`, start/stop/restart, and a streamed journal with optional notifications. A Host half serves `/mcstat` (JSON + SSE) and registers a `mcstat_server` agent tool; a Client half registers the sidebar entry and the page. No build step, no runtime dependencies, Linux + `systemd --user` only.
+A Minecraft server panel inside the DeepSeek Harness Web UI: live status (service, CPU, memory, players, world, backups, tunnel, tick warnings), host facts, an editable subset of `server.properties`, start/stop/restart, a streamed journal with optional notifications, and opt-in DS-assisted checks that ask the profile's default model to review a bounded status digest. Units and directories are autodetected, and can be pinned through the bundle config or environment. A Host half serves `/mcstat` (JSON + SSE) and registers a `mcstat_server` agent tool; a Client half registers the sidebar entry and the page. No build step, no runtime dependencies, Linux + `systemd --user` only.
 
 ## License
 

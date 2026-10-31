@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url'
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const at = (name) => join(root, name)
 
-for (const script of ['index.js', 'client.js', 'lib/system.js', 'lib/collect.js', 'lib/actions.js', 'lib/routes.js', 'lib/tool.js']) {
+for (const script of ['index.js', 'client.js', 'lib/system.js', 'lib/collect.js', 'lib/actions.js', 'lib/routes.js', 'lib/tool.js', 'lib/ai.js']) {
   execFileSync(process.execPath, ['--check', at(script)], { stdio: 'inherit' })
   console.log(`syntax ok: ${script}`)
 }

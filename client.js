@@ -19,6 +19,7 @@ window.__ModuleLoader__.load({
     const ACTION_PATH = '/mcstat/action';
     const CONFIG_PATH = '/mcstat/config';
     const STREAM_PATH = '/mcstat/logs/stream';
+    const AI_PATH = '/mcstat/ai';
     const REFRESH_MS = 10000;
     const HISTORY_LIMIT = 60;
     const MAX_LOGS = 400;
@@ -136,6 +137,21 @@ window.__ModuleLoader__.load({
       'difficulty.easy': '简单',
       'difficulty.normal': '普通',
       'difficulty.hard': '困难',
+      'ai.title': 'DS 辅助管理',
+      'ai.description': '开启后由 DeepSeek 每 {minutes} 分钟检查一次服务器状态与日志，并把发现的问题列在下面；只发送状态摘要和最近告警，不会上传完整日志。',
+      'ai.enabled': '已开启',
+      'ai.disabled': '已关闭',
+      'ai.analyze': '立即分析',
+      'ai.analyzing': '分析中…',
+      'ai.none': '还没有分析结果',
+      'ai.lastRun': '上次分析 {time} · {model}',
+      'ai.error': '分析失败：{message}',
+      'ai.level.ok': '正常',
+      'ai.level.warn': '注意',
+      'ai.level.error': '有问题',
+      'ai.level.unknown': '未知',
+      'host.unit': '服务单元',
+      'host.serverDir': '服务器目录',
       'unit.day': '天',
       'list.separator': '、',
       'dash': '—',
@@ -249,6 +265,21 @@ window.__ModuleLoader__.load({
       'difficulty.easy': 'Easy',
       'difficulty.normal': 'Normal',
       'difficulty.hard': 'Hard',
+      'ai.title': 'DS-assisted checks',
+      'ai.description': 'When enabled, DeepSeek reviews the server status and logs every {minutes} minutes and lists problems below. Only a status digest and recent warnings are sent, never the full log.',
+      'ai.enabled': 'On',
+      'ai.disabled': 'Off',
+      'ai.analyze': 'Check now',
+      'ai.analyzing': 'Checking…',
+      'ai.none': 'No check yet',
+      'ai.lastRun': 'Last check {time} · {model}',
+      'ai.error': 'Check failed: {message}',
+      'ai.level.ok': 'OK',
+      'ai.level.warn': 'Attention',
+      'ai.level.error': 'Problem',
+      'ai.level.unknown': 'Unknown',
+      'host.unit': 'Service unit',
+      'host.serverDir': 'Server directory',
       'unit.day': 'd',
       'list.separator': ', ',
       'dash': '—',
@@ -337,6 +368,24 @@ window.__ModuleLoader__.load({
 .mcstat-dialog h2{margin:0 0 8px;font-size:15px;font-weight:500}
 .mcstat-dialog p{margin:0 0 18px;color:var(--dsw-alias-label-secondary);font-size:13px;line-height:1.6}
 .mcstat-dialog-actions{display:flex;justify-content:flex-end;gap:8px}
+.mcstat-ai{padding:14px 16px;border:1px solid var(--dsw-alias-border-l1);border-radius:12px;background:var(--dsw-alias-bg-layer-1)}
+.mcstat-ai-note{margin:0;color:var(--dsw-alias-label-secondary);font-size:12px}
+.mcstat-ai-status{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;margin-top:12px;color:var(--dsw-alias-label-secondary);font-size:12px}
+.mcstat-ai-verdict{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:10px;font-size:13px}
+.mcstat-ai-badge{padding:1px 8px;border:1px solid currentColor;border-radius:10px;font-size:12px;white-space:nowrap}
+.mcstat-ai-badge--ok{color:var(--dsw-alias-state-success-primary)}
+.mcstat-ai-badge--warn{color:var(--dsw-alias-state-warn-primary)}
+.mcstat-ai-badge--error{color:var(--dsw-alias-state-error-primary)}
+.mcstat-ai-badge--unknown{color:var(--dsw-alias-label-secondary)}
+.mcstat-ai-summary{overflow-wrap:anywhere}
+.mcstat-ai-findings{margin:10px 0 0;padding-left:18px;font-size:13px}
+.mcstat-ai-finding{margin:4px 0}
+.mcstat-ai-finding strong{margin-right:6px;font-weight:500}
+.mcstat-ai-finding--error strong{color:var(--dsw-alias-state-error-primary)}
+.mcstat-ai-finding--warn strong{color:var(--dsw-alias-state-warn-primary)}
+.mcstat-ai-finding span{color:var(--dsw-alias-label-secondary)}
+.mcstat-ai-suggestions{margin:8px 0 0;padding-left:18px;color:var(--dsw-alias-label-secondary);font-size:12px}
+.mcstat-ai-error{margin:10px 0 0;color:var(--dsw-alias-state-error-primary);font-size:12px}
 `;
 
     let fallbackT = (key) => key;
@@ -661,6 +710,12 @@ window.__ModuleLoader__.load({
         // The stream follows the panel's lifetime; rows are appended, never replaced.
       }, []);
 
+      React.useEffect(() => {
+        if (data === null || data.ai === undefined || data.ai.running !== true) return;
+        const timer = window.setTimeout(() => setReloadKey((value) => value + 1), 2500);
+        return () => window.clearTimeout(timer);
+      }, [data]);
+
       const refresh = () => setReloadKey((value) => value + 1);
 
       const showToast = (tone, text) => setToast({ tone, text });
@@ -767,6 +822,36 @@ window.__ModuleLoader__.load({
         });
       };
 
+      const toggleAi = async (enabled) => {
+        try {
+          const response = await fetch(AI_PATH, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ enabled }),
+          });
+          const payload = await response.json();
+          if (!payload.ok) throw new Error(payload.error || 'failed');
+          refresh();
+        } catch (error) {
+          showToast('error', t('error.action', { message: String(error?.message ?? error) }));
+        }
+      };
+
+      const analyzeNow = async () => {
+        try {
+          const response = await fetch(AI_PATH, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({ analyze: true }),
+          });
+          const payload = await response.json();
+          if (!payload.ok) throw new Error(payload.error || 'failed');
+          refresh();
+        } catch (error) {
+          showToast('error', t('error.action', { message: String(error?.message ?? error) }));
+        }
+      };
+
       const togglePause = () => {
         if (paused) {
           setPaused(false);
@@ -806,6 +891,8 @@ window.__ModuleLoader__.load({
       const tunnel = (data && data.tunnel) || { active: false, address: null };
       const backups = (data && data.backups) || { count: 0, bytes: 0, latest: null };
       const lag = (data && data.lag) || { warnings: 0, windowMinutes: 10 };
+      const ai = (data && data.ai) || { enabled: false, running: false, last: null, error: null, intervalMinutes: 5 };
+      const settings = (data && data.settings) || null;
       const dash = t('dash');
       const busyLabel =
         busy === ''
@@ -940,9 +1027,16 @@ window.__ModuleLoader__.load({
             h(StatChip, { name: t('meta.level'), value: server.levelName || 'world' }),
           );
 
-      const hostFacts = host === null
+      const settingsFacts = settings === null
         ? []
         : [
+            [t('host.unit'), settings.unit || dash],
+            [t('host.serverDir'), settings.serverDir || dash],
+          ];
+      const hostFacts = host === null
+        ? settingsFacts
+        : [
+            ...settingsFacts,
             [t('host.os'), host.os || dash],
             [t('host.kernel'), host.kernel || dash],
             [t('host.cpu'), host.cpuModel ? `${host.cpuModel} · ${host.cores}` : String(host.cores ?? dash)],
@@ -956,7 +1050,7 @@ window.__ModuleLoader__.load({
             [t('host.uptime'), formatUptime(host.uptimeSeconds, t)],
           ];
 
-      const hostSection = host === null
+      const hostSection = hostFacts.length === 0
         ? null
         : h(
             'section',
@@ -969,7 +1063,88 @@ window.__ModuleLoader__.load({
             ),
           );
 
-      const settings = draft === null
+      const aiSection = data === null
+        ? null
+        : h(
+            'section',
+            { className: 'mcstat-section' },
+            h(
+              'div',
+              { className: 'mcstat-section-head' },
+              h('h2', null, t('ai.title')),
+              h(
+                'label',
+                { className: 'mcstat-toggle' },
+                h('input', {
+                  type: 'checkbox',
+                  checked: ai.enabled === true,
+                  onChange: (event) => toggleAi(event.target.checked),
+                }),
+                h('span', null, ai.enabled ? t('ai.enabled') : t('ai.disabled')),
+              ),
+            ),
+            h(
+              'div',
+              { className: 'mcstat-ai' },
+              h('p', { className: 'mcstat-ai-note' }, t('ai.description', { minutes: ai.intervalMinutes ?? 5 })),
+              ai.enabled !== true
+                ? null
+                : h(
+                    'div',
+                    { className: 'mcstat-ai-status' },
+                    h(
+                      'span',
+                      null,
+                      ai.running === true
+                        ? t('ai.analyzing')
+                        : ai.last !== null && ai.last !== undefined
+                          ? t('ai.lastRun', { time: formatClock(ai.last.at), model: `${ai.last.provider}/${ai.last.model}` })
+                          : t('ai.none'),
+                    ),
+                    h(
+                      'button',
+                      { type: 'button', className: 'mcstat-button', disabled: ai.running === true, onClick: analyzeNow },
+                      ai.running === true ? t('ai.analyzing') : t('ai.analyze'),
+                    ),
+                  ),
+              ai.enabled === true && ai.last !== null && ai.last !== undefined
+                ? h(
+                    'div',
+                    { className: 'mcstat-ai-verdict' },
+                    h(
+                      'span',
+                      { className: `mcstat-ai-badge mcstat-ai-badge--${ai.last.level || 'unknown'}` },
+                      t(`ai.level.${ai.last.level || 'unknown'}`),
+                    ),
+                    h('span', { className: 'mcstat-ai-summary' }, ai.last.summary),
+                  )
+                : null,
+              ai.enabled === true && ai.last !== null && ai.last !== undefined && ai.last.findings.length > 0
+                ? h(
+                    'ul',
+                    { className: 'mcstat-ai-findings' },
+                    ai.last.findings.map((finding, index) =>
+                      h(
+                        'li',
+                        { key: index, className: `mcstat-ai-finding mcstat-ai-finding--${finding.severity}` },
+                        h('strong', null, finding.title),
+                        h('span', null, finding.detail),
+                      ),
+                    ),
+                  )
+                : null,
+              ai.enabled === true && ai.last !== null && ai.last !== undefined && ai.last.suggestions.length > 0
+                ? h(
+                    'ul',
+                    { className: 'mcstat-ai-suggestions' },
+                    ai.last.suggestions.map((suggestion, index) => h('li', { key: index }, suggestion)),
+                  )
+                : null,
+              ai.enabled === true && ai.error ? h('p', { className: 'mcstat-ai-error' }, t('ai.error', { message: ai.error })) : null,
+            ),
+          );
+
+      const settingsSection = draft === null
         ? null
         : h(
             'section',
@@ -1115,7 +1290,7 @@ window.__ModuleLoader__.load({
               'div',
               { className: 'mcstat-log-head' },
               h('h2', null, t('logs.title')),
-              h('code', { className: 'mcstat-log-hint' }, 'journalctl --user -u mc -f'),
+              h('code', { className: 'mcstat-log-hint' }, `journalctl --user -u ${(data.unit && data.unit.name) || 'mc'} -f`),
             ),
             h(
               'div',
@@ -1196,7 +1371,7 @@ window.__ModuleLoader__.load({
           h(
             'div',
             { className: 'mcstat-banner', key: 'stopped' },
-            h('div', null, h('strong', null, t('stopped.title')), h('p', null, t('stopped.hint'), ' ', h('code', null, 'systemctl --user start mc'))),
+            h('div', null, h('strong', null, t('stopped.title')), h('p', null, t('stopped.hint'), ' ', h('code', null, `systemctl --user start ${(data.unit && data.unit.name) || 'mc'}`))),
           ),
         );
       }
@@ -1216,7 +1391,7 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', className: 'mcstat-button', onClick: refresh }, t('error.retry')),
             )
           : h('div', { className: 'mcstat-empty' }, t('loading'))
-        : h(React.Fragment, null, alerts, cards, meta, settings, hostSection, logSection);
+        : h(React.Fragment, null, alerts, cards, meta, aiSection, settingsSection, hostSection, logSection);
 
       return h(
         'div',

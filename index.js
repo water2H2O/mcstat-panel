@@ -2,18 +2,24 @@
 /**
  * Host half of the mcstat panel.
  *
- * Registers the `/mcstat` HTTP surface (snapshot, live log stream, server control,
- * settings) and, when the profile has a tool registry, one `mcstat_server` tool
- * that drives the very same operations from the conversation.
+ * Resolves its settings (bundle config, environment, then autodetection), then
+ * registers the `/mcstat` HTTP surface — snapshot, live log stream, server
+ * control, settings, and DS-assisted checks — plus one `mcstat_server` tool that
+ * drives the very same operations from the conversation.
  */
-import { handleRequest } from './lib/routes.js'
-import { MCSTAT_TOOL } from './lib/tool.js'
+import { loadAiSettings } from './lib/ai.js'
+import { createHandler } from './lib/routes.js'
+import { resolveSettings } from './lib/system.js'
+import { createTool } from './lib/tool.js'
 
 export const inject = ['webServer']
 
-export function apply(ctx) {
+export async function apply(ctx, config) {
+  await resolveSettings(config).catch(() => {})
+  await loadAiSettings().catch(() => {})
+
   ctx.effect(
-    () => ctx.webServer.register({ kind: 'prefix', path: '/mcstat', handler: handleRequest }),
+    () => ctx.webServer.register({ kind: 'prefix', path: '/mcstat', handler: createHandler(ctx) }),
     'mcstat: http surface',
   )
 
@@ -21,7 +27,7 @@ export function apply(ctx) {
   if (tools !== undefined && tools !== null && typeof tools.register === 'function') {
     ctx.effect(() => {
       try {
-        return tools.register(MCSTAT_TOOL)
+        return tools.register(createTool(ctx))
       } catch (error) {
         // A rejected tool definition must not take the panel down with it.
         console.error('[mcstat] tool registration failed:', error)
